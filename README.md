@@ -1,6 +1,6 @@
 RUNNING RCV
-    See WA_RCV_run_scripts/README.md for instructions on how to set up and run a large set of RCV simulations across the parameter space
-    The outputs of those runs are stored in WA_RCV_outputs
+    - See WA_RCV_run_scripts/README.md for instructions on how to set up and run a large set of RCV simulations across the parameter space
+    - The outputs of those runs are stored in WA_RCV_outputs
 
 GENERATING ENSEMBLES
 
