@@ -19,13 +19,14 @@ num_draws = 10000
 
 polity = 'WA'
 
-voting_systems_dists = {('1','House'):49,('1','Senate'):49,('2','House'):33,('2','Senate'):33,('3','House'):14,('3','Senate'):7,('4','Unicameral'):150,('5','Unicameral'):200}
-voting_systems_seats = {('1','House'):6,('1','Senate'):3,('2','House'):3,('2','Senate'):1,('3','House'):7,('3','Senate'):7,('4','Unicameral'):1,('5','Unicameral'):1}
+voting_systems_dists = {('0','House'):49,('0','Senate'):49,('1','House'):16,('1','Senate'):16,('2','House'):33,('2','Senate'):33,('3','House'):14,('3','Senate'):7,('4','Unicameral'):150,('5','Unicameral'):30}
+voting_systems_seats = {('0','House'):1,('0','Senate'):1,('1','House'):6,('1','Senate'):3,('2','House'):3,('2','Senate'):1,('3','House'):7,('3','Senate'):7,('4','Unicameral'):1,('5','Unicameral'):5}
 nested_voting_systems = [('3','House'),('3','Senate')]
-plans_time_dict = {('WA',7):'0',('WA',14):'0',('WA',33):'0',('WA',49):'0',('WA',150):'0',('WA',200):'0'}
+multi_dist_elecs = {('0','House'):2}
+plans_time_dict = {('WA',7):'0',('WA',14):'0',('WA',16):'0',('WA',30):'0',('WA',33):'0',('WA',49):'0',('WA',150):'0'}
 plans_store_steps = [50000*i for i in range(1,11)]
-# voting_systems_to_plot = [vs for vs in voting_systems_dists.keys()]
-voting_systems_to_plot = [('3','House'),('3','Senate'),('4','Unicameral'),('5','Unicameral')]
+voting_systems_to_plot = [vs for vs in voting_systems_dists.keys()]
+voting_systems_to_plot = [('0', 'House')]
 
 for voting_system in voting_systems_to_plot:
     print('Voting System: ',voting_system)
@@ -35,8 +36,9 @@ for voting_system in voting_systems_to_plot:
     chamber = voting_system[1]
     plans_run_name = polity+'_'+str(num_dists if (voting_system not in nested_voting_systems or chamber == 'Senate') else int(num_dists/2))+('_False_False' if voting_system not in nested_voting_systems else '_True_False')
     plans_time = plans_time_dict[(polity,num_dists)]
-    demog = 'subdit_poc_cvap' if voting_system in nested_voting_systems else 'poc_cvap'
+    demog = 'subdit_poc_cvap' if voting_system in nested_voting_systems and chamber == 'House' else 'poc_cvap'
     seat_size = voting_systems_seats[voting_system]
+    dist_elecs = multi_dist_elecs[voting_system] if voting_system in multi_dist_elecs.keys() else 1
     run_name = polity+'_'+voting_system[0]+'_'+chamber+'_'+demog+'_'+str(num_dists)+'_dists_'+str(seat_size)+'_seats'
 
     #current seat share
@@ -94,28 +96,40 @@ for voting_system in voting_systems_to_plot:
 
 
     # Draws for parameter combinations
-    plans_sample = plans.sample(n = num_draws, replace = True)
-    plans_sample = plans_sample.round(decimals=2)
+    new_df_cols = []
     for model in model_list:
-        plans_sample[model+'_POC_seats_sum'] = 0
-    for dist in tqdm(range(num_dists)):
-        plans_sample['scenario_draw'] = np.random.choice(scenario_list, len(plans_sample))
-        plans_sample['poc_cands_draw'] = np.random.choice([b for a,b,c in seats_cands_dict[seat_size]], len(plans_sample))
-        plans_sample['pol_draw'] = np.random.choice([a for a,b in pol_lev_dict.values()], len(plans_sample))
-        for model in model_list:
-            plans_sample['d'+str(dist)+'_'+model+'_POC_seats'] = list(plans_sample.merge(df_rcv[df_rcv['model']==model][['scenario','POC_cands','POC_for_POC','demog_lev','est_POC_seats']],how = 'left', left_on = ['scenario_draw','poc_cands_draw','pol_draw',dist], right_on = ['scenario','POC_cands','POC_for_POC','demog_lev'])['est_POC_seats'])
-            plans_sample[model+'_POC_seats_sum'] = plans_sample[model+'_POC_seats_sum'] + plans_sample['d'+str(dist)+'_'+model+'_POC_seats']
+        new_df_cols.append(model+'_POC_seats_sum')
+        for dist in range(num_dists):
+            new_df_cols.append('d'+str(dist)+'_'+model+'_POC_seats')
         
+    plans_sample = pd.DataFrame(0,index=np.arange(num_draws),columns = new_df_cols)
+    for i in range(dist_elecs):
+        plans_sample_i = plans.sample(n = num_draws, replace = True)
+        plans_sample_i = plans_sample_i.round(decimals=2)
+        for model in model_list:
+            plans_sample_i[model+'_POC_seats_sum'] = 0
+        for dist in tqdm(range(num_dists)):
+            plans_sample_i['scenario_draw'] = np.random.choice(scenario_list, len(plans_sample_i))
+            plans_sample_i['poc_cands_draw'] = np.random.choice([b for a,b,c in seats_cands_dict[seat_size]], len(plans_sample_i))
+            plans_sample_i['pol_draw'] = np.random.choice([a for a,b in pol_lev_dict.values()], len(plans_sample_i))
+            for model in model_list:
+                plans_sample_i['d'+str(dist)+'_'+model+'_POC_seats'] = list(plans_sample_i.merge(df_rcv[df_rcv['model']==model][['scenario','POC_cands','POC_for_POC','demog_lev','est_POC_seats']],how = 'left', left_on = ['scenario_draw','poc_cands_draw','pol_draw',dist], right_on = ['scenario','POC_cands','POC_for_POC','demog_lev'])['est_POC_seats'])
+                plans_sample_i[model+'_POC_seats_sum'] = plans_sample_i[model+'_POC_seats_sum'] + plans_sample_i['d'+str(dist)+'_'+model+'_POC_seats']
+        
+        for model in model_list:
+            plans_sample[model+'_POC_seats_sum'] = plans_sample[model+'_POC_seats_sum'].add(list(plans_sample_i[model+'_POC_seats_sum']))
+            for dist in range(num_dists):
+                plans_sample['d'+str(dist)+'_'+model+'_POC_seats'] = plans_sample['d'+str(dist)+'_'+model+'_POC_seats'].add(list(plans_sample_i['d'+str(dist)+'_'+model+'_POC_seats']))
 
 
     # *********  FIGURES  *********
 
     #histogram of POC seats
     fig, axs = plt.subplots(len(model_list),1, figsize = (7,len(model_list)*2))
-    x_min = .95* min([plans_sample[model_list[i]+'_POC_seats_sum'].min()/(seat_size*num_dists) for i in range(len(model_list))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
-    x_max = 1.05* max([plans_sample[model_list[i]+'_POC_seats_sum'].max()/(seat_size*num_dists) for i in range(len(model_list))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
+    x_min = .95* min([plans_sample[model_list[i]+'_POC_seats_sum'].min()/(seat_size*num_dists*dist_elecs) for i in range(len(model_list))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
+    x_max = 1.05* max([plans_sample[model_list[i]+'_POC_seats_sum'].max()/(seat_size*num_dists*dist_elecs) for i in range(len(model_list))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
     for i in range(len(model_list)):
-        axs[i].hist(plans_sample[model_list[i]+'_POC_seats_sum']/(seat_size*num_dists), color = 'slategray', bins = [0.02*i for i in range (51)])
+        axs[i].hist(plans_sample[model_list[i]+'_POC_seats_sum']/(seat_size*num_dists*dist_elecs), color = 'slategray', bins = [0.02*i for i in range (51)])
         axs[i].axvline(x = polity_poc_cvaps[polity],label = polity + ' POC CVAP' if i == 0 else '', color = 'lightblue', lw = 4, alpha = .7)
         axs[i].axvline(x = polity_poc_pops[polity],label = polity + ' POC POP' if i == 0 else '', color = 'mediumblue', lw = 4, alpha = .4)
         axs[i].axvline(x = current_poc_reps[(polity,chamber)],label = polity + ' current seats' if i == 0 else '', color = 'gray', lw = 4, alpha = .5)
@@ -199,22 +213,39 @@ for voting_system in voting_systems_to_plot:
     # # *********  Breakdown by Polarization  *********
 
     # Draws for parameter combinations
-    plans_sample_by_pol = plans.sample(n = num_draws, replace = True)
-    plans_sample_by_pol = plans_sample_by_pol.round(decimals=2)
+
+    new_df_cols_by_pol = []
     for model in model_list:
         for pol_lev in polarization_levels:
-            plans_sample_by_pol[model+'_'+pol_lev+'_POC_seats_sum'] = 0
-    for dist in tqdm(range(num_dists)):
-        plans_sample_by_pol['scenario_draw'] = np.random.choice(scenario_list, len(plans_sample_by_pol))
-        plans_sample_by_pol['poc_cands_draw'] = np.random.choice([b for a,b,c in seats_cands_dict[seat_size]], len(plans_sample_by_pol))
+            new_df_cols_by_pol.append(model+'_'+pol_lev+'_POC_seats_sum')
+            for dist in range(num_dists):
+                new_df_cols_by_pol.append('d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats')
+
+    plans_sample_by_pol = pd.DataFrame(0,index=np.arange(num_draws),columns = new_df_cols_by_pol)        
+    
+    for i in range(dist_elecs):
+        plans_sample_by_pol_i = plans.sample(n = num_draws, replace = True)
+        plans_sample_by_pol_i = plans_sample_by_pol_i.round(decimals=2)
         for model in model_list:
             for pol_lev in polarization_levels:
-                plans_sample_by_pol['d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats'] = list(plans_sample_by_pol.merge(df_rcv[(df_rcv['model']==model)&(df_rcv['pol_level']==pol_lev)][['scenario','POC_cands','demog_lev','est_POC_seats']],how = 'left', left_on = ['scenario_draw','poc_cands_draw',dist], right_on = ['scenario','POC_cands','demog_lev'])['est_POC_seats'])
-                plans_sample_by_pol[model+'_'+pol_lev+'_POC_seats_sum'] = plans_sample_by_pol[model+'_'+pol_lev+'_POC_seats_sum'] + plans_sample_by_pol['d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats']
-        
+                plans_sample_by_pol_i[model+'_'+pol_lev+'_POC_seats_sum'] = 0
+        for dist in tqdm(range(num_dists)):
+            plans_sample_by_pol_i['scenario_draw'] = np.random.choice(scenario_list, len(plans_sample_by_pol_i))
+            plans_sample_by_pol_i['poc_cands_draw'] = np.random.choice([b for a,b,c in seats_cands_dict[seat_size]], len(plans_sample_by_pol_i))
+            for model in model_list:
+                for pol_lev in polarization_levels:
+                    plans_sample_by_pol_i['d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats'] = list(plans_sample_by_pol_i.merge(df_rcv[(df_rcv['model']==model)&(df_rcv['pol_level']==pol_lev)][['scenario','POC_cands','demog_lev','est_POC_seats']],how = 'left', left_on = ['scenario_draw','poc_cands_draw',dist], right_on = ['scenario','POC_cands','demog_lev'])['est_POC_seats'])
+                    plans_sample_by_pol_i[model+'_'+pol_lev+'_POC_seats_sum'] = plans_sample_by_pol_i[model+'_'+pol_lev+'_POC_seats_sum'] + plans_sample_by_pol_i['d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats']
+
+        for model in model_list:
+            for pol_lev in polarization_levels:
+                plans_sample_by_pol[model+'_'+pol_lev+'_POC_seats_sum'] = plans_sample_by_pol[model+'_'+pol_lev+'_POC_seats_sum'].add(list(plans_sample_by_pol_i[model+'_'+pol_lev+'_POC_seats_sum']))
+                for dist in range(num_dists):
+                    plans_sample_by_pol['d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats'] = plans_sample_by_pol['d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats'].add(list(plans_sample_by_pol_i['d'+str(dist)+'_'+model+'_'+pol_lev+'_POC_seats']))
+                
 
     # Data
-    plans_sample_by_pol['num_seats'] = seat_size*num_dists
+    plans_sample_by_pol['num_seats'] = seat_size*num_dists*dist_elecs
     col_list = ['num_seats']
     for i in range(len(model_list)):
         for j in range(len(polarization_levels)):
@@ -227,12 +258,12 @@ for voting_system in voting_systems_to_plot:
 
     #histogram of POC seats by Polarization 
     fig, axs = plt.subplots(len(model_list),1, figsize = (7,len(model_list)*2))
-    x_min = .95* min([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].min()/(seat_size*num_dists) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
-    x_max = 1.05* max([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].max()/(seat_size*num_dists) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
+    x_min = .95* min([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].min()/(seat_size*num_dists*dist_elecs) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
+    x_max = 1.05* max([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].max()/(seat_size*num_dists*dist_elecs) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
     leg = []
     for i in range(len(model_list)):
         for j in range(len(polarization_levels)):
-            sns.kdeplot(list(plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists)) +[plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].mean()/(seat_size*num_dists)+.00001],ax = axs[i],shade=True, legend =False, color = pol_colors[j], bw = .005, clip = (0,float('inf')))
+            sns.kdeplot(list(plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists*dist_elecs)) +[plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].mean()/(seat_size*num_dists*dist_elecs)+.00001],ax = axs[i],shade=True, legend =False, color = pol_colors[j], bw = .005, clip = (0,float('inf')))
             leg_marker = mlines.Line2D([], [],  markeredgecolor=pol_colors[j], markerfacecolor=colors.to_rgba(pol_colors[j])[:3]+tuple([.3]), marker='s', linestyle='None',markersize=10, label='Polarization Category '+str(j+1))
             if i == 0:
                 leg.append(leg_marker)
@@ -254,12 +285,12 @@ for voting_system in voting_systems_to_plot:
 
     #histogram of POC seats by Polarization 
     fig, axs = plt.subplots(len(model_list),1, figsize = (7,len(model_list)*2))
-    x_min = .95* min([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].min()/(seat_size*num_dists) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
-    x_max = 1.05* max([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].max()/(seat_size*num_dists) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
+    x_min = .95* min([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].min()/(seat_size*num_dists*dist_elecs) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
+    x_max = 1.05* max([plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum'].max()/(seat_size*num_dists*dist_elecs) for i in range(len(model_list)) for j in range(len(polarization_levels))]+[polity_poc_cvaps[polity],polity_poc_pops[polity],current_poc_reps[(polity,chamber)]])
     for i in range(len(model_list)):
         for j in range(len(polarization_levels)):
             kwargs = dict(histtype='stepfilled', alpha=0.3, density=True, ec="k", bins = [0.02*i for i in range (51)])
-            axs[i].hist(plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists), **kwargs, label = 'Polarization Category '+str(j+1) if i==0 else '', color = pol_colors[j])
+            axs[i].hist(plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists*dist_elecs), **kwargs, label = 'Polarization Category '+str(j+1) if i==0 else '', color = pol_colors[j])
         axs[i].axvline(x = polity_poc_cvaps[polity],label = polity + ' POC CVAP' if i==0 else '', color = 'lightblue', lw = 4, alpha = .7)
         axs[i].axvline(x = polity_poc_pops[polity],label = polity + ' POC POP' if i==0 else '', color = 'mediumblue', lw = 4, alpha = .4)
         axs[i].axvline(x = current_poc_reps[(polity,chamber)],label = polity + ' current POC seats' if i==0 else '', color = 'gray', lw = 4, alpha = .5)
@@ -337,7 +368,7 @@ for voting_system in voting_systems_to_plot:
     for j in range(len(polarization_levels)):
         plans_sample_by_pol[polarization_levels[j]+'_POC_seats_sum'] = 0
         for i in range(len(model_list)):
-            plans_sample_by_pol[polarization_levels[j]+'_POC_seats_sum'] = plans_sample_by_pol[polarization_levels[j]+'_POC_seats_sum']+ plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists)/len(model_list)
+            plans_sample_by_pol[polarization_levels[j]+'_POC_seats_sum'] = plans_sample_by_pol[polarization_levels[j]+'_POC_seats_sum']+ plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists*dist_elecs)/len(model_list)
         sns.kdeplot(list(plans_sample_by_pol[polarization_levels[j]+'_POC_seats_sum'])+[plans_sample_by_pol[polarization_levels[j]+'_POC_seats_sum'].mean()+.00001],ax = ax,shade=True, legend =False, color = pol_colors[j], bw = 0.005, clip = (0,float('inf')))
         leg_marker = mlines.Line2D([], [],  markeredgecolor=pol_colors[j], markerfacecolor=colors.to_rgba(pol_colors[j])[:3]+tuple([.3]), marker='s', linestyle='None',markersize=10, label='Polarization Category '+str(j+1))
         leg.append(leg_marker)
@@ -363,7 +394,7 @@ for voting_system in voting_systems_to_plot:
     for j in range(len(polarization_levels)):
         concat_plans = []
         for i in range(len(model_list)):
-            concat_plans = concat_plans + list(plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists))
+            concat_plans = concat_plans + list(plans_sample_by_pol[model_list[i]+'_'+polarization_levels[j]+'_POC_seats_sum']/(seat_size*num_dists*dist_elecs))
         # sns.kdeplot(concat_plans+[sum(concat_plans)/len(concat_plans)+.00001],ax = ax, shade=True, legend =False, color = pol_colors[j],bw = .05)
         sns.kdeplot(concat_plans+[sum(concat_plans)/len(concat_plans)+.00001],ax = ax, shade=True, legend =False, color = pol_colors[j], bw = .005, clip = (0,float('inf')))
         leg_marker = mlines.Line2D([], [],  markeredgecolor=pol_colors[j], markerfacecolor=colors.to_rgba(pol_colors[j])[:3]+tuple([.3]), marker='s', linestyle='None',markersize=10, label='Polarization Category '+str(j+1))
@@ -389,7 +420,7 @@ for voting_system in voting_systems_to_plot:
     for j in range(len(model_list)):
         concat_plans = []
         for i in range(len(polarization_levels)):
-            concat_plans = concat_plans + list(plans_sample_by_pol[model_list[j]+'_'+polarization_levels[i]+'_POC_seats_sum']/(seat_size*num_dists))
+            concat_plans = concat_plans + list(plans_sample_by_pol[model_list[j]+'_'+polarization_levels[i]+'_POC_seats_sum']/(seat_size*num_dists*dist_elecs))
         sns.kdeplot(concat_plans+[sum(concat_plans)/len(concat_plans)+.00001],ax = ax, shade=True, legend =False, color = pol_colors[j], bw = .005, clip = (0,float('inf')))
         leg_marker = mlines.Line2D([], [],  markeredgecolor=pol_colors[j], markerfacecolor=colors.to_rgba(pol_colors[j])[:3]+tuple([.3]), marker='s', linestyle='None',markersize=10, label=model_list[j] + ' Model')
         leg.append(leg_marker)
